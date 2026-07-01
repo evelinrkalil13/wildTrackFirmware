@@ -11,6 +11,8 @@
 #include "sensors/EnvironmentSensor.h"
 #include "scale/ScaleSensor.h"
 #include "core/PresenceService.h"
+#include "core/TimeService.h"
+#include "telemetry/TelemetryBuilder.h"
 
 static DeviceInfoService   deviceInfo;
 static ConfigStorage       configStorage;
@@ -22,7 +24,9 @@ static EnvironmentSensor   envSensor;
 static ScaleSensor         scaleSensor;
 static PresenceService     presenceService;
 static DeviceConfig        config;
-static uint32_t            lastAlive = 0;
+static uint32_t            lastAlive     = 0;
+static TimeService         timeService;
+static uint32_t            lastTelemetry = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -57,6 +61,7 @@ void setup() {
         wifiService.begin(config.wifi_ssid, config.wifi_password);
         mqttService.begin(config.mqtt_host, config.mqtt_port,
                           config.device_id, config.serial_number);
+        timeService.begin();
     } else {
         Serial.println("[Estado] PROVISIONING_REQUIRED");
     }
@@ -88,5 +93,31 @@ void loop() {
         }
         Serial.print(" | MQTT="); Serial.print(mqttService.isConnected() ? "OK" : "off");
         Serial.println();
+    }
+
+    if (wifiService.isConnected() && mqttService.isConnected()) {
+        if (now - lastTelemetry >= 60000UL) {
+            lastTelemetry = now;
+            if (!timeService.isReady()) {
+                Serial.println("[TELEMETRY] skipped: time not ready");
+            } else {
+                char payload[320];
+                TelemetryBuilder::build(
+                    payload, sizeof(payload),
+                    config.device_id,
+                    deviceInfo.getFirmwareVersion(),
+                    deviceInfo.getRssi(),
+                    envSensor.getTemperatureC(),
+                    envSensor.getHumidity(),
+                    envSensor.isValid(),
+                    timeService.getIso8601()
+                );
+                const char* topic = mqttService.topics().telemetry;
+                bool ok = mqttService.publish(topic, payload);
+                Serial.print("[TELEMETRY] topic=");   Serial.println(topic);
+                Serial.print("[TELEMETRY] payload="); Serial.println(payload);
+                Serial.print("[TELEMETRY] ");         Serial.println(ok ? "[OK]" : "[FAIL]");
+            }
+        }
     }
 }
