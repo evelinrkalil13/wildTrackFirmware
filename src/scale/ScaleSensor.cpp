@@ -43,5 +43,6 @@ float ScaleSensor::calibrateWith(float knownGrams) {
 
 float ScaleSensor::readWeightGrams() {
     if (!_hx711.is_ready()) return 0.0f;
-    return _hx711.get_units(5);
+    float w = _hx711.get_units(5);
+    return w < 0.0f ? 0.0f : w;
 }

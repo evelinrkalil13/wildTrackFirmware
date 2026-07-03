@@ -11,6 +11,7 @@
 #include "sensors/EnvironmentSensor.h"
 #include "scale/ScaleSensor.h"
 #include "core/PresenceService.h"
+#include "rfid/RfidReader.h"
 #include "core/TimeService.h"
 #include "telemetry/TelemetryBuilder.h"
 
@@ -23,6 +24,7 @@ static DistanceSensor      distanceSensor;
 static EnvironmentSensor   envSensor;
 static ScaleSensor         scaleSensor;
 static PresenceService     presenceService;
+static RfidReader          rfidReader;
 static DeviceConfig        config;
 static uint32_t            lastAlive     = 0;
 static TimeService         timeService;
@@ -55,6 +57,7 @@ void setup() {
     distanceSensor.begin(PIN_DISTANCE_SENSOR);
     presenceService.begin(distanceSensor);
     envSensor.begin(PIN_DHT22);
+    rfidReader.begin(PIN_RFID_RX);
 
     if (provisioner.isProvisioned()) {
         Serial.println("[Estado] PROVISIONADO");
@@ -70,6 +73,11 @@ void setup() {
 void loop() {
     provisioner.tick();
     presenceService.tick();
+    rfidReader.tick();
+    if (rfidReader.hasTag()) {
+        Serial.print("[RFID] Tag leído: "); Serial.println(rfidReader.getTagId());
+        rfidReader.clearTag();
+    }
     envSensor.read();
 
     if (!provisioner.isProvisioned()) return;
