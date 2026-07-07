@@ -1,5 +1,6 @@
 #include "ProvisioningService.h"
 #include "scale/ScaleSensor.h"
+#include "dispenser/DispenserService.h"
 #include <Arduino.h>
 #include <strings.h>
 #include <cstring>
@@ -8,6 +9,10 @@
 
 void ProvisioningService::attachScale(ScaleSensor& scale) {
     _scale = &scale;
+}
+
+void ProvisioningService::attachDispenser(DispenserService& dispenser) {
+    _dispenser = &dispenser;
 }
 
 void ProvisioningService::begin(DeviceConfig& config, ConfigStorage& storage) {
@@ -111,6 +116,16 @@ void ProvisioningService::_processLine(const char* line) {
         _storage->save(*_config);
         Serial.println("[OK] Factor guardado en flash.");
 
+    } else if (strcasecmp(cmd, "dispense") == 0) {
+        if (!_dispenser) { Serial.println("[ERR] Dispensador no conectado."); return; }
+        uint8_t  ciclos = (parsed >= 2) ? (uint8_t)atoi(key)  : 3;
+        uint16_t pulsos = (parsed >= 3) ? (uint16_t)atoi(val) : 5;
+        if (ciclos == 0 || ciclos > 20)   { Serial.println("[ERR] Ciclos invalidos (1-20)."); return; }
+        if (pulsos == 0 || pulsos > 100)  { Serial.println("[ERR] Pulsos invalidos (1-100)."); return; }
+        if (!_dispenser->dispense(ciclos, pulsos)) {
+            Serial.println("[ERR] No se pudo iniciar dispensacion.");
+        }
+
     } else if (strcasecmp(cmd, "status") == 0) {
         _printStatus();
 
@@ -144,4 +159,5 @@ void ProvisioningService::_printHelp() const {
     Serial.println("  clear        -> borrar flash y reiniciar");
     Serial.println("  tare         -> tarar balanza y guardar offset");
     Serial.println("  cal <gramos> -> calibrar con peso conocido");
+    Serial.println("  dispense [ciclos] [pulsos] -> dispensar (def: 3 ciclos, 5 pulsos/lado)");
 }

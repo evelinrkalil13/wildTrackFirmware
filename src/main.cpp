@@ -12,6 +12,10 @@
 #include "scale/ScaleSensor.h"
 #include "core/PresenceService.h"
 #include "rfid/RfidReader.h"
+#include "dispenser/DispenserMotor.h"
+#include "dispenser/RotationSensor.h"
+#include "dispenser/LimitSwitch.h"
+#include "dispenser/DispenserService.h"
 #include "core/TimeService.h"
 #include "telemetry/TelemetryBuilder.h"
 
@@ -25,6 +29,10 @@ static EnvironmentSensor   envSensor;
 static ScaleSensor         scaleSensor;
 static PresenceService     presenceService;
 static RfidReader          rfidReader;
+static DispenserMotor      dispenserMotor;
+static RotationSensor      rotationSensor;
+static LimitSwitch         limitSwitch;
+static DispenserService    dispenserService;
 static DeviceConfig        config;
 static uint32_t            lastAlive     = 0;
 static TimeService         timeService;
@@ -58,6 +66,11 @@ void setup() {
     presenceService.begin(distanceSensor);
     envSensor.begin(PIN_DHT22);
     rfidReader.begin(PIN_RFID_RX);
+    dispenserMotor.begin(PIN_MOTOR_IN1, PIN_MOTOR_IN2);
+    rotationSensor.begin(PIN_ROTATION_SENSOR);
+    limitSwitch.begin(PIN_LIMIT_SWITCH);
+    dispenserService.begin(dispenserMotor, rotationSensor, limitSwitch);
+    provisioner.attachDispenser(dispenserService);
 
     if (provisioner.isProvisioned()) {
         Serial.println("[Estado] PROVISIONADO");
@@ -74,6 +87,7 @@ void loop() {
     provisioner.tick();
     presenceService.tick();
     rfidReader.tick();
+    dispenserService.tick();
     if (rfidReader.hasTag()) {
         Serial.print("[RFID] Tag leído: "); Serial.println(rfidReader.getTagId());
         rfidReader.clearTag();
@@ -100,6 +114,8 @@ void loop() {
             Serial.print(" hum=");  Serial.print(envSensor.getHumidity(), 1);    Serial.print("%");
         }
         Serial.print(" | MQTT="); Serial.print(mqttService.isConnected() ? "OK" : "off");
+        Serial.print(" | rot="); Serial.print(rotationSensor.getPulseCount());
+        Serial.print(" enc="); Serial.print(digitalRead(PIN_ROTATION_SENSOR));
         Serial.println();
     }
 
