@@ -39,7 +39,8 @@ Módulos:
 * `RfidReader`
 * `ScaleSensor`
 * `EnvironmentSensor`
-* `DispenserServo`
+* `DispenserMotor`
+* `RotationSensor`
 * `LimitSwitch`
 * `StatusLed`
 
@@ -67,7 +68,7 @@ Estos módulos responden preguntas como:
 * ¿comenzó una sesión de alimentación?
 * ¿terminó una sesión?
 * ¿cuánto alimento se consumió?
-* ¿debe activarse el servo?
+* ¿debe activarse el motor del dispensador?
 * ¿hay alimento en el depósito?
 
 ---
@@ -215,8 +216,10 @@ firmware/
 │   ├── dispenser/
 │   │   ├── DispenserService.h
 │   │   ├── DispenserService.cpp
-│   │   ├── DispenserServo.h
-│   │   ├── DispenserServo.cpp
+│   │   ├── DispenserMotor.h
+│   │   ├── DispenserMotor.cpp
+│   │   ├── RotationSensor.h
+│   │   ├── RotationSensor.cpp
 │   │   ├── LimitSwitch.h
 │   │   └── LimitSwitch.cpp
 │   ├── telemetry/
@@ -246,7 +249,9 @@ HX711 DOUT: GPIO 3
 HX711 SCK: GPIO 2
 DHT22: GPIO 5
 Limit switch: GPIO 6
-Servo: GPIO 7
+Motor IN1: GPIO 38
+Motor IN2: GPIO 39
+Rotation Sensor DO: GPIO 10
 RFID RX: GPIO 18
 RGB LED: GPIO 48
 ```
@@ -533,15 +538,54 @@ Para MVP no es obligatorio almacenar eventos no publicados, pero sí recomendabl
 * La sesión queda incompleta.
 * El evento debe marcar `weight_status: unavailable`.
 
-### Servo falla
+### Dispenser falla
 
-* Registrar `dispenser_error`.
-* No seguir intentando indefinidamente.
-* Requiere validación con final de carrera.
+* Si el motor está energizado pero el `RotationSensor` no genera pulsos, detectar atasco.
+* Si el tiempo máximo de dispensación es excedido sin completar los pulsos esperados, detener el motor inmediatamente.
+* Registrar `DISPENSER_ERROR`.
+* No reintentar la dispensación automáticamente para evitar daños al mecanismo.
 
 ---
 
-## 13. Estrategia de pruebas
+## 13. Sistema de dispensación
+
+El dispensador utiliza un motorreductor DC (FT-49OGM500-530K, 3.7 V, 7.5 RPM) controlado mediante el driver puente H MX1616, y un sensor óptico de rotación (SPD_DET_V1.0) montado sobre el eje pre-reductor del motor.
+
+### Mecanismo bidireccional
+
+El comedero tiene dos aletas: una activa cuando el motor gira hacia adelante (FORWARD) y otra cuando gira hacia atrás (REVERSE). Ambas deben activarse en cada dispensación para prevenir atascos y dosificar en dos direcciones.
+
+### Principios de control
+
+* **FORWARD** se controla por **tiempo fijo** (`FORWARD_RUN_MS = 2500 ms`). El sensor óptico genera señal espuria en este sentido (interferencia eléctrica del motor), por lo que no es confiable para conteo.
+* **REVERSE** se controla por **conteo de pulsos** del `RotationSensor`. El sensor óptico genera pulsos reales en esta dirección.
+* El parámetro `pulsesPerSide` del comando `dispense` controla únicamente la fase REVERSE.
+* El encoder está en el eje pre-reductor y genera aproximadamente 72 pulsos/segundo en REVERSE a 5 V. El máximo mecánico es ~100 pulsos por fase.
+* Cada ciclo completo es: FORWARD (2500 ms) → pausa 150 ms → REVERSE (N pulsos) → pausa 150 ms → siguiente ciclo.
+
+### Detección de atascos
+
+* Si el motor corre en REVERSE y el `RotationSensor` no alcanza los pulsos esperados dentro de `DIR_TIMEOUT_MS` (35 s), se considera atasco.
+* El motor se detiene inmediatamente.
+* Se registra `DISPENSER_ERROR`.
+* FORWARD no tiene detección de atasco (control por tiempo).
+
+### Verificación de alimento
+
+* El `LimitSwitch` en GPIO 6 detecta si existe alimento suficiente en el depósito.
+* Si el `LimitSwitch` indica depósito vacío, el motor no debe activarse.
+* Se publica evento `empty_reservoir`.
+
+### Responsabilidades por módulo
+
+* `DispenserMotor`: driver de bajo nivel. Enciende y apaga el motor via MX1616. No conoce pulsos ni lógica de negocio.
+* `RotationSensor`: driver de bajo nivel. Cuenta pulsos del sensor óptico en el eje pre-reductor. No conoce el motor ni la sesión.
+* `LimitSwitch`: driver de bajo nivel. Lee el estado del interruptor de depósito.
+* `DispenserService`: servicio de dominio. Coordina `DispenserMotor`, `RotationSensor` y `LimitSwitch`. FORWARD por tiempo, REVERSE por pulsos, timeout y error.
+
+---
+
+## 14. Estrategia de pruebas
 
 Cada paso debe verificarse antes de avanzar.
 
@@ -573,7 +617,7 @@ Desconectar WiFi, broker o sensor y validar que el firmware no se cuelgue.
 
 ---
 
-## 14. Roadmap incremental
+## 15. Roadmap incremental
 
 ### Firmware Step 0 — Proyecto base ✅ COMPLETADO
 
@@ -645,9 +689,41 @@ Objetivo: Integrar lector RFID.
 
 ---
 
-### Firmware Step 10 — Servo y final de carrera
+### Firmware Step 10 — Sistema de dispensación ✅ COMPLETADO
 
-Objetivo: Controlar el dispensador.
+Hardware:
+* Motorreductor DC FT-49OGM500-530K (3.7 V, operado a 5 V)
+* Driver puente H MX1616 (IN1=GPIO38, IN2=GPIO39)
+* Sensor óptico de rotación SPD_DET_V1.0 (eje pre-reductor, GPIO10)
+  * Q1 (IR LED): Rojo(A) → 220Ω → 3.3V, Negro(K) → GND
+  * Q2 (fototransistor): Blanco(C) → 10kΩ → 3.3V y GPIO10, Amarillo(E) → GND
+* LimitSwitch NO (GPIO6, INPUT_PULLUP, LOW=alimento disponible)
+
+Flujo por ciclo:
+
+```txt
+Verificar alimento (LimitSwitch)
+↓
+FORWARD 2500 ms (aleta A — control por tiempo)
+↓
+Pausa 150 ms
+↓
+REVERSE hasta N pulsos ópticos (aleta B — control por pulsos)
+├─ Pulsos alcanzados → pausa 150 ms → siguiente ciclo o IDLE
+└─ Timeout 35 s sin pulsos → DISPENSER_ERROR
+```
+
+Notas de implementación:
+* FORWARD usa tiempo fijo: el sensor genera interferencia eléctrica en este sentido.
+* REVERSE usa pulsos reales del encoder óptico (~72 pulsos/s a 5 V, máx ~100 pulsos por fase).
+* Comando `dispense [ciclos] [pulsos]`: `pulsos` controla la fase REVERSE.
+* Comando disponible via `ProvisioningService` por Serial.
+
+Criterios de aceptación validados:
+* Ambas aletas se mueven visiblemente en cada ciclo.
+* El `RotationSensor` genera pulsos confiables en sentido REVERSE.
+* El `LimitSwitch` detecta depósito vacío e impide activación.
+* Un atasco en REVERSE genera `DISPENSER_ERROR` y detiene el motor.
 
 ---
 
@@ -687,18 +763,18 @@ Objetivo: Guardar eventos si MQTT no está disponible.
 
 ---
 
-## 15. Decisiones importantes
+## 16. Decisiones importantes
 
 1. MQTT se implementa antes de todos los sensores, pero después del provisioning.
 2. La cámara se deja después de sensores críticos porque es más inestable y pesada.
 3. El evento principal se construye primero localmente y luego se publica.
-4. El servo se integra antes de la sesión completa, pero no debe bloquear toda la lógica.
+4. El sistema de dispensación se integra antes de la sesión completa, pero nunca debe bloquear la lógica de detección ni la comunicación MQTT.
 5. La cola offline se deja para una fase posterior al MVP.
 6. La lógica de sesión debe vivir en `FeedingSessionService`, no en `main.cpp`.
 
 ---
 
-## 16. Alcance recomendado para MVP
+## 17. Alcance recomendado para MVP
 
 El MVP realista debería incluir:
 
