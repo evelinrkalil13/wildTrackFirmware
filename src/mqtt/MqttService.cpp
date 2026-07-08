@@ -12,7 +12,7 @@ void MqttService::begin(const char* host, uint16_t port,
 
     _topics.build(deviceId);
     _client.setServer(_host, _port);
-    _client.setBufferSize(512);
+    _client.setBufferSize(1024);
 
     Serial.print("[MQTT] Broker:     "); Serial.print(_host);
     Serial.print(":"); Serial.println(_port);
