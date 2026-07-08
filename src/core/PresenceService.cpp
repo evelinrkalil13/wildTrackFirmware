@@ -25,7 +25,8 @@ void PresenceService::tick() {
     }
 
     bool wasPresent = _present;
-    _present = (_presenceCount >= STABLE_COUNT);
+    if (!_present && _presenceCount >= STABLE_COUNT) _present = true;
+    if ( _present && _absenceCount  >= STABLE_COUNT) _present = false;
 
     if (_present && !wasPresent) {
         Serial.print("[Presencia] DETECTADA — ");

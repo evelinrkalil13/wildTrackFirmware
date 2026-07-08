@@ -727,21 +727,60 @@ Criterios de aceptación validados:
 
 ---
 
-### Firmware Step 11 — Cámara
+### Firmware Step 11 — Cámara ✅ COMPLETADO
 
 Objetivo: Capturar fotografías asociadas a una sesión.
 
+Implementación: `CameraService` en `src/camera/`. OV2640, QVGA JPEG (~10 KB) en PSRAM.
+Pines migrados para liberar GPIOs de cámara: `PIN_DISTANCE_SENSOR=14`, `PIN_DHT22=21`, `PIN_LIMIT_SWITCH=40`, `PIN_ROTATION_SENSOR=41`, `PIN_RFID_RX=42`.
+
 ---
 
-### Firmware Step 12 — Evento local de sesión
+### Firmware Step 12 — Evento local de sesión ✅ COMPLETADO
 
 Objetivo: Construir un evento `feeding_session` sin publicarlo aún.
 
+Implementación: `FeedingSessionService` en `src/core/`.
+
+Flujo:
+* Presencia estable ≥1500 ms → inicia sesión: genera event_id (UUID v4 via `esp_fill_random`), lee peso inicial, captura foto, lee temp/hum.
+* Durante sesión: captura RFID si llega, monitorea ausencia.
+* Ausencia confirmada ≥3000 ms → cierra sesión: lee peso final, timestamp ISO 8601 (fin de sesión), construye JSON.
+* `hasEvent()=true` bloquea nuevas sesiones hasta que Step 13 publique y llame `clearEvent()`.
+
+JSON construido (contrato backend Slice 6):
+```json
+{
+  "event_id": "uuid-v4",
+  "event_type": "feeding_session",
+  "device_id": "uuid",
+  "timestamp": "ISO-8601-end",
+  "rfid": { "detected": false, "tag": null, "read_quality": null },
+  "sensors": { "temperature_c": 31.5, "humidity_pct": 40.5,
+                "initial_weight_g": 146.5, "final_weight_g": 0.0, "consumed_g": 146.5 },
+  "media": { "captured": 1, "urls": [] },
+  "device_status": { "wifi_rssi_dbm": -73, "firmware_version": "0.1.0", "battery_pct": null }
+}
+```
+
+Notas:
+* `consumed_g = max(initial - final, 0)`.
+* `timestamp` = hora de cierre de sesión (un solo campo, sin station_id).
+* El frame JPEG queda en PSRAM hasta que Step 13 lo libere via `clearEvent()`.
+
 ---
 
-### Firmware Step 13 — Publicación MQTT de sesión
+### Firmware Step 13 — Publicación MQTT de sesión ✅ COMPLETADO
 
-Objetivo: Publicar evento `feeding_session`.
+Objetivo: Publicar evento `feeding_session` con foto.
+
+Flujo:
+* `hasEvent()` → HTTP POST JPEG a `POST /api/v1/media/upload?device_id=&event_id=` (puerto 8000).
+* Si upload OK → `setPhotoUrl(url)` reconstruye JSON con `urls: ["<url>"]`.
+* Publica JSON via MQTT. Si OK → `clearEvent()` libera PSRAM y habilita nueva sesión.
+* Si upload falla → publica igual con `urls: []`, sin bloquear la sesión.
+
+Implementación: `MediaUploadService` en `src/media/`. Buffer MQTT ampliado a 1024 bytes.
 
 ---
 

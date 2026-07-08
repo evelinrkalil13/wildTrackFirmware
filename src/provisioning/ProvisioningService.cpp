@@ -1,6 +1,7 @@
 #include "ProvisioningService.h"
 #include "scale/ScaleSensor.h"
 #include "dispenser/DispenserService.h"
+#include "camera/CameraService.h"
 #include <Arduino.h>
 #include <strings.h>
 #include <cstring>
@@ -13,6 +14,10 @@ void ProvisioningService::attachScale(ScaleSensor& scale) {
 
 void ProvisioningService::attachDispenser(DispenserService& dispenser) {
     _dispenser = &dispenser;
+}
+
+void ProvisioningService::attachCamera(CameraService& camera) {
+    _camera = &camera;
 }
 
 void ProvisioningService::begin(DeviceConfig& config, ConfigStorage& storage) {
@@ -126,6 +131,15 @@ void ProvisioningService::_processLine(const char* line) {
             Serial.println("[ERR] No se pudo iniciar dispensacion.");
         }
 
+    } else if (strcasecmp(cmd, "photo") == 0) {
+        if (!_camera) { Serial.println("[ERR] Camara no conectada."); return; }
+        camera_fb_t* fb = _camera->capture();
+        if (!fb)      { Serial.println("[ERR] Captura fallida.");     return; }
+        Serial.print("[OK] Foto: ");
+        Serial.print(fb->width); Serial.print("x"); Serial.print(fb->height);
+        Serial.print(" | "); Serial.print(fb->len / 1024.0f, 1); Serial.println(" KB");
+        _camera->release(fb);
+
     } else if (strcasecmp(cmd, "status") == 0) {
         _printStatus();
 
@@ -160,4 +174,5 @@ void ProvisioningService::_printHelp() const {
     Serial.println("  tare         -> tarar balanza y guardar offset");
     Serial.println("  cal <gramos> -> calibrar con peso conocido");
     Serial.println("  dispense [ciclos] [pulsos] -> dispensar (def: 3 ciclos, 5 pulsos/lado)");
+    Serial.println("  photo        -> capturar foto y mostrar tamaño");
 }

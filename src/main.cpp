@@ -18,6 +18,9 @@
 #include "dispenser/DispenserService.h"
 #include "core/TimeService.h"
 #include "telemetry/TelemetryBuilder.h"
+#include "camera/CameraService.h"
+#include "core/FeedingSessionService.h"
+#include "media/MediaUploadService.h"
 
 static DeviceInfoService   deviceInfo;
 static ConfigStorage       configStorage;
@@ -33,6 +36,10 @@ static DispenserMotor      dispenserMotor;
 static RotationSensor      rotationSensor;
 static LimitSwitch         limitSwitch;
 static DispenserService    dispenserService;
+static CameraService           cameraService;
+static FeedingSessionService   sessionService;
+static MediaUploadService      mediaService;
+static constexpr uint16_t      API_PORT = 8000;
 static DeviceConfig        config;
 static uint32_t            lastAlive     = 0;
 static TimeService         timeService;
@@ -72,6 +79,11 @@ void setup() {
     dispenserService.begin(dispenserMotor, rotationSensor, limitSwitch);
     provisioner.attachDispenser(dispenserService);
 
+    cameraService.begin();
+    provisioner.attachCamera(cameraService);
+    sessionService.begin(presenceService, cameraService, scaleSensor, rfidReader,
+                         envSensor, timeService, deviceInfo, config.device_id);
+
     if (provisioner.isProvisioned()) {
         Serial.println("[Estado] PROVISIONADO");
         wifiService.begin(config.wifi_ssid, config.wifi_password);
@@ -88,10 +100,7 @@ void loop() {
     presenceService.tick();
     rfidReader.tick();
     dispenserService.tick();
-    if (rfidReader.hasTag()) {
-        Serial.print("[RFID] Tag leído: "); Serial.println(rfidReader.getTagId());
-        rfidReader.clearTag();
-    }
+    sessionService.tick();
     envSensor.read();
 
     if (!provisioner.isProvisioned()) return;
@@ -120,6 +129,21 @@ void loop() {
     }
 
     if (wifiService.isConnected() && mqttService.isConnected()) {
+        if (sessionService.hasEvent()) {
+            camera_fb_t* photo = sessionService.getPhoto();
+            if (photo) {
+                char photoUrl[200] = {};
+                bool uploaded = mediaService.upload(
+                    config.mqtt_host, API_PORT,
+                    config.device_id, sessionService.getEventId(),
+                    photo, photoUrl, sizeof(photoUrl));
+                if (uploaded) sessionService.setPhotoUrl(photoUrl);
+            }
+            bool ok = mqttService.publish(mqttService.topics().events, sessionService.getEventJson());
+            Serial.print("[SESSION] publish "); Serial.println(ok ? "[OK]" : "[FAIL — reintento]");
+            if (ok) sessionService.clearEvent();
+        }
+
         if (now - lastTelemetry >= 60000UL) {
             lastTelemetry = now;
             if (!timeService.isReady()) {
