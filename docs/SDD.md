@@ -241,20 +241,180 @@ firmware/
 
 ---
 
-## 5. Pines actuales validados
+## 5. Especificación de hardware y conexiones
 
-```txt
-Sharp proximity sensor: GPIO 4
-HX711 DOUT: GPIO 3
-HX711 SCK: GPIO 2
-DHT22: GPIO 5
-Limit switch: GPIO 6
-Motor IN1: GPIO 38
-Motor IN2: GPIO 39
-Rotation Sensor DO: GPIO 10
-RFID RX: GPIO 18
-RGB LED: GPIO 48
-```
+### Placa principal
+
+**ESP32-S3-CAM N16R8**
+- Flash: 16 MB QIO
+- PSRAM: 8 MB OPI (usado para frame buffer de cámara)
+- LED RGB integrado: GPIO 48
+
+---
+
+### Cámara — OV2640
+
+Módulo con conector FFC estilo ESP32S3-EYE. GPIOs 4–18 reservados exclusivamente para cámara.
+
+| Señal  | GPIO | Notas                        |
+|--------|------|------------------------------|
+| XCLK   | 15   | Clock de salida al sensor    |
+| SIOD   | 4    | I²C SDA (SCCB)               |
+| SIOC   | 5    | I²C SCL (SCCB)               |
+| Y2     | 11   | Datos píxel bit 0            |
+| Y3     | 9    | Datos píxel bit 1            |
+| Y4     | 8    | Datos píxel bit 2            |
+| Y5     | 10   | Datos píxel bit 3            |
+| Y6     | 12   | Datos píxel bit 4            |
+| Y7     | 18   | Datos píxel bit 5            |
+| Y8     | 17   | Datos píxel bit 6            |
+| Y9     | 16   | Datos píxel bit 7            |
+| VSYNC  | 6    | Sincronización vertical      |
+| HREF   | 7    | Sincronización horizontal    |
+| PCLK   | 13   | Pixel clock                  |
+| VCC    | 3.3V |                              |
+| GND    | GND  |                              |
+
+Configuración firmware: `FRAMESIZE_QVGA` (320×240), JPEG calidad 12, frame en PSRAM, ~10 KB por foto.
+
+> ⚠️ Desconectar VCC de la cámara antes de subir firmware — el consumo de corriente impide que el chip entre en modo de descarga.
+
+---
+
+### Sensor de distancia — GP2Y0A21YK0F (Sharp IR)
+
+Sensor analógico infrarrojo, rango 10–80 cm.
+
+| Pin sensor | Conexión ESP32 |
+|------------|----------------|
+| VCC        | 5V             |
+| GND        | GND            |
+| Vout       | GPIO 14 (ADC)  |
+
+Configuración firmware: `ADC_11db`, promedio de 20 lecturas, fórmula `d = 29.988 × V^(−1.173)`. Umbral de presencia: 10 cm.
+
+---
+
+### Báscula — HX711 + celda de carga
+
+| Pin HX711 | Conexión ESP32 |
+|-----------|----------------|
+| VCC       | 3.3V           |
+| GND       | GND            |
+| DOUT      | GPIO 3         |
+| SCK       | GPIO 2         |
+
+Celda de carga conectada a E+/E−/A+/A− del HX711. Factor de calibración y offset de tare guardados en flash.
+
+---
+
+### Sensor ambiental — DHT22
+
+| Pin DHT22 | Conexión ESP32       |
+|-----------|----------------------|
+| VCC       | 3.3V                 |
+| GND       | GND                  |
+| DATA      | GPIO 21              |
+| (DATA)    | 10 kΩ pullup a 3.3V  |
+
+Mide temperatura (°C) y humedad relativa (%).
+
+---
+
+### Lector RFID
+
+Módulo UART, solo RX desde el ESP32 (el lector transmite el tag al ESP32).
+
+| Pin RFID | Conexión ESP32 |
+|----------|----------------|
+| VCC      | 5V             |
+| GND      | GND            |
+| TX       | GPIO 42 (RX2)  |
+
+---
+
+### Sistema de dispensación
+
+#### Motor — FT-49OGM500-530K
+
+Motorreductor DC, 3.7 V, 7.5 RPM en eje de salida.
+
+#### Driver puente H — MX1616
+
+| Pin MX1616 | Conexión ESP32 | Función                    |
+|------------|----------------|----------------------------|
+| IN1        | GPIO 38        | Dirección FORWARD          |
+| IN2        | GPIO 39        | Dirección REVERSE          |
+| OUT1/OUT2  | Motor +/−      | Salida al motor            |
+| VCC lógica | 3.3V           |                            |
+| VM motor   | 3.7V (batería) |                            |
+| GND        | GND común      |                            |
+
+Control firmware: `IN1=HIGH, IN2=LOW` → FORWARD / `IN1=LOW, IN2=HIGH` → REVERSE / ambos LOW → freno.
+
+#### Sensor óptico de rotación — SPD_DET_V1.0
+
+Montado sobre el **eje pre-reductor** del motor (antes de la caja reductora). Disco ranurado interrumpe el haz IR.
+
+| Componente         | Conexión                              |
+|--------------------|---------------------------------------|
+| Q1 IR LED Rojo (A) | 220 Ω → 3.3V                         |
+| Q1 IR LED Negro (K)| GND                                   |
+| Q2 fototransistor Blanco (C) | 10 kΩ → 3.3V **y** GPIO 41 |
+| Q2 fototransistor Amarillo (E) | GND                       |
+
+Señal: digital, pulso bajo cuando el disco interrumpe el haz.
+Velocidad: ~72 pulsos/segundo en REVERSE a 3.7 V. Máximo mecánico: ~100 pulsos por fase.
+
+> Nota: en dirección FORWARD el sensor genera interferencia eléctrica (~6000 pulsos/s de ruido). Por eso FORWARD se controla por tiempo fijo (2500 ms) y REVERSE por conteo de pulsos.
+
+#### Limit switch — fin de carrera
+
+Detecta si hay alimento en el depósito. Tipo NO (normalmente abierto).
+
+| Pin switch | Conexión ESP32                 |
+|------------|--------------------------------|
+| Terminal 1 | GPIO 40 (INPUT_PULLUP)        |
+| Terminal 2 | GND                            |
+
+Lógica: `LOW` = alimento disponible (switch cerrado). `HIGH` = depósito vacío.
+
+---
+
+### LED RGB integrado
+
+GPIO 48, tipo WS2812 (NeoPixel), 1 LED.
+
+---
+
+### Resumen de pines
+
+| GPIO | Función               | Dirección |
+|------|-----------------------|-----------|
+| 2    | HX711 SCK             | Output    |
+| 3    | HX711 DOUT            | Input     |
+| 4    | Cámara SIOD           | I²C       |
+| 5    | Cámara SIOC           | I²C       |
+| 6    | Cámara VSYNC          | Input     |
+| 7    | Cámara HREF           | Input     |
+| 8    | Cámara Y4             | Input     |
+| 9    | Cámara Y3             | Input     |
+| 10   | Cámara Y5             | Input     |
+| 11   | Cámara Y2             | Input     |
+| 12   | Cámara Y6             | Input     |
+| 13   | Cámara PCLK           | Input     |
+| 14   | Sensor distancia Vout | ADC Input |
+| 15   | Cámara XCLK           | Output    |
+| 16   | Cámara Y9             | Input     |
+| 17   | Cámara Y8             | Input     |
+| 18   | Cámara Y7             | Input     |
+| 21   | DHT22 DATA            | Input     |
+| 38   | Motor IN1 (FORWARD)   | Output    |
+| 39   | Motor IN2 (REVERSE)   | Output    |
+| 40   | Limit switch          | Input     |
+| 41   | Rotation sensor DO    | Input     |
+| 42   | RFID RX (Serial2)     | Input     |
+| 48   | RGB LED               | Output    |
 
 ---
 

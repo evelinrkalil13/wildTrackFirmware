@@ -27,9 +27,17 @@ void RfidReader::tick() {
 
         if (b == 0x03 && _reading) {
             _reading = false;
-            _hasTag  = true;
-            Serial.print("[RFID] TAG: ");
-            Serial.println(_tagBuf);
+
+            // Strip trailing non-printable bytes (checksum, control chars)
+            while (_pos > 0 && ((uint8_t)_tagBuf[_pos - 1] < 0x20 || (uint8_t)_tagBuf[_pos - 1] > 0x7E)) {
+                _tagBuf[--_pos] = '\0';
+            }
+
+            _hasTag = (_pos > 0);
+            if (_hasTag) {
+                Serial.print("[RFID] TAG: ");
+                Serial.println(_tagBuf);
+            }
             continue;
         }
 
