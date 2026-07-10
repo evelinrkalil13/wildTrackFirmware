@@ -9,7 +9,8 @@ public:
     MqttService();
 
     void begin(const char* host, uint16_t port,
-               const char* deviceId, const char* clientId);
+               const char* deviceId, const char* clientId,
+               const char* username = nullptr, const char* password = nullptr);
     void tick();
     bool isConnected();
     bool publish(const char* topic, const char* payload, bool retained = false);
@@ -25,6 +26,8 @@ private:
     uint16_t    _port     = 1883;
     const char* _deviceId = nullptr;
     const char* _clientId = nullptr;
+    const char* _username = nullptr;
+    const char* _password = nullptr;
     bool        _wasConnected = false;
     uint32_t    _lastAttempt  = 0;
 

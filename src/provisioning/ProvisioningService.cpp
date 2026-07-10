@@ -80,6 +80,14 @@ void ProvisioningService::_processLine(const char* line) {
             _config->mqtt_port = (uint16_t)atoi(val);
             Serial.print("[OK] mqtt_port = "); Serial.println(_config->mqtt_port);
 
+        } else if (strcmp(key, "mqtt_user") == 0) {
+            strncpy(_config->mqtt_username, val, sizeof(_config->mqtt_username) - 1);
+            Serial.print("[OK] mqtt_user = "); Serial.println(_config->mqtt_username);
+
+        } else if (strcmp(key, "mqtt_pass") == 0) {
+            strncpy(_config->mqtt_password, val, sizeof(_config->mqtt_password) - 1);
+            Serial.println("[OK] mqtt_pass = ****");
+
         } else {
             Serial.print("[ERR] Clave desconocida: "); Serial.println(key);
         }
@@ -156,8 +164,10 @@ void ProvisioningService::_printStatus() const {
     Serial.print("  device_id:  "); Serial.println(_config->device_id[0]      ? _config->device_id  : "(vacio)");
     Serial.print("  wifi_ssid:  "); Serial.println(_config->wifi_ssid[0]      ? _config->wifi_ssid  : "(vacio)");
     Serial.print("  wifi_pass:  "); Serial.println(_config->wifi_password[0]  ? "****"              : "(vacio)");
-    Serial.print("  mqtt_host:  "); Serial.println(_config->mqtt_host[0]      ? _config->mqtt_host  : "(vacio)");
+    Serial.print("  mqtt_host:  "); Serial.println(_config->mqtt_host[0]      ? _config->mqtt_host     : "(vacio)");
     Serial.print("  mqtt_port:  "); Serial.println(_config->mqtt_port);
+    Serial.print("  mqtt_user:  "); Serial.println(_config->mqtt_username[0] ? _config->mqtt_username : "(vacio)");
+    Serial.print("  mqtt_pass:  "); Serial.println(_config->mqtt_password[0] ? "****"                 : "(vacio)");
     Serial.println("-------------------------");
 }
 
@@ -168,6 +178,8 @@ void ProvisioningService::_printHelp() const {
     Serial.println("  set wifi_pass <password>");
     Serial.println("  set mqtt_host <host>");
     Serial.println("  set mqtt_port <puerto>");
+    Serial.println("  set mqtt_user <usuario>");
+    Serial.println("  set mqtt_pass <password>");
     Serial.println("  status  -> ver config actual");
     Serial.println("  save    -> guardar y reiniciar");
     Serial.println("  clear        -> borrar flash y reiniciar");
