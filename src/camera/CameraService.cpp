@@ -57,6 +57,9 @@ bool CameraService::begin() {
 
 camera_fb_t* CameraService::capture() {
     if (!_ready) return nullptr;
+    // Discard stale frame so next get() captures a fresh one
+    camera_fb_t* stale = esp_camera_fb_get();
+    if (stale) esp_camera_fb_return(stale);
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) Serial.println("[Camera] Error al capturar frame");
     return fb;
