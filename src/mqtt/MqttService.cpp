@@ -4,11 +4,14 @@
 MqttService::MqttService() : _client(_wifiClient) {}
 
 void MqttService::begin(const char* host, uint16_t port,
-                        const char* deviceId, const char* clientId) {
+                        const char* deviceId, const char* clientId,
+                        const char* username, const char* password) {
     _host     = host;
     _port     = port;
     _deviceId = deviceId;
     _clientId = clientId;
+    _username = (username && username[0]) ? username : nullptr;
+    _password = (password && password[0]) ? password : nullptr;
 
     _topics.build(deviceId);
     _client.setServer(_host, _port);
@@ -24,7 +27,7 @@ bool MqttService::_connect() {
     const char* lwt = "{\"status\":\"offline\",\"reason\":\"unexpected_disconnect\"}";
 
     bool ok = _client.connect(_clientId,
-                              nullptr, nullptr,
+                              _username, _password,
                               _topics.status, 0, false, lwt);
     if (ok) {
         _client.publish(_topics.status, "{\"status\":\"online\"}", false);

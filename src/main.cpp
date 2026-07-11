@@ -88,7 +88,8 @@ void setup() {
         Serial.println("[Estado] PROVISIONADO");
         wifiService.begin(config.wifi_ssid, config.wifi_password);
         mqttService.begin(config.mqtt_host, config.mqtt_port,
-                          config.device_id, config.serial_number);
+                          config.device_id, config.serial_number,
+                          config.mqtt_username, config.mqtt_password);
         timeService.begin();
     } else {
         Serial.println("[Estado] PROVISIONING_REQUIRED");

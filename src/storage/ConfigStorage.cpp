@@ -14,7 +14,9 @@ bool ConfigStorage::load(DeviceConfig& config) {
     strncpy(config.serial_number,           prefs.getString("serial_num", "").c_str(), sizeof(config.serial_number) - 1);
     strncpy(config.wifi_ssid,               prefs.getString("wifi_ssid",  "").c_str(), sizeof(config.wifi_ssid)    - 1);
     strncpy(config.wifi_password,           prefs.getString("wifi_pass",  "").c_str(), sizeof(config.wifi_password) - 1);
-    strncpy(config.mqtt_host,               prefs.getString("mqtt_host",  "").c_str(), sizeof(config.mqtt_host)    - 1);
+    strncpy(config.mqtt_host,               prefs.getString("mqtt_host",  "").c_str(), sizeof(config.mqtt_host)     - 1);
+    strncpy(config.mqtt_username,           prefs.getString("mqtt_user",  "").c_str(), sizeof(config.mqtt_username)  - 1);
+    strncpy(config.mqtt_password,           prefs.getString("mqtt_pass",  "").c_str(), sizeof(config.mqtt_password)  - 1);
     strncpy(config.firmware_version,        prefs.getString("fw_version", "").c_str(), sizeof(config.firmware_version) - 1);
     config.mqtt_port                 = prefs.getUShort("mqtt_port",  0);
     config.hx711_calibration_factor  = prefs.getFloat("hx711_cal",  0.0f);
@@ -33,6 +35,8 @@ bool ConfigStorage::save(const DeviceConfig& config) {
     prefs.putString("wifi_ssid",  config.wifi_ssid);
     prefs.putString("wifi_pass",  config.wifi_password);
     prefs.putString("mqtt_host",  config.mqtt_host);
+    prefs.putString("mqtt_user",  config.mqtt_username);
+    prefs.putString("mqtt_pass",  config.mqtt_password);
     prefs.putString("fw_version", config.firmware_version);
     prefs.putUShort("mqtt_port",  config.mqtt_port);
     prefs.putFloat("hx711_cal",   config.hx711_calibration_factor);
